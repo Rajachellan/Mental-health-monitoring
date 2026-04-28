@@ -34,7 +34,8 @@ def add_employee():
             phone=data['phone'],
             employee_id=data['employee_id'],
             department=data.get('department'),
-            designation=data.get('designation')
+            designation=data.get('designation'),
+            portal_password=data.get('portal_password'),
         )
         
         return jsonify({

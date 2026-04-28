@@ -1,3 +1,5 @@
+from werkzeug.security import generate_password_hash
+
 from backend.models.employee import Employee
 from backend.models.organization import Organization
 from backend.database.db import db
@@ -5,8 +7,17 @@ from backend.database.db import db
 class EmployeeService:
     
     @staticmethod
-    def add_employee(organization_id, first_name, last_name, email, phone, 
-                    employee_id, department=None, designation=None):
+    def add_employee(
+        organization_id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        employee_id,
+        department=None,
+        designation=None,
+        portal_password=None,
+    ):
         """Add a new employee to organization"""
         
         # Check if organization exists
@@ -32,7 +43,10 @@ class EmployeeService:
             employee_id=employee_id,
             department=department,
             designation=designation,
-            status='pending'
+            status='pending',
+            password_hash=generate_password_hash(portal_password)
+            if portal_password
+            else None,
         )
         
         db.session.add(employee)
@@ -120,7 +134,8 @@ class EmployeeService:
                     phone=emp_data['phone'],
                     employee_id=emp_data['employee_id'],
                     department=emp_data.get('department'),
-                    designation=emp_data.get('designation')
+                    designation=emp_data.get('designation'),
+                    portal_password=emp_data.get('portal_password'),
                 )
                 added_employees.append(employee)
             except Exception as e:

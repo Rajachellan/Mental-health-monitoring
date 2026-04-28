@@ -1,8 +1,95 @@
-from flask import Blueprint, Response, jsonify, request
-from backend.services.organization_service import OrganizationService
-from backend.services.employee_service import EmployeeService
+from flask import Blueprint, Response, redirect, request, url_for
+from flask_login import current_user
+
+from backend.models.organization import Organization
 
 web_routes = Blueprint('web', __name__)
+
+
+def _require_org_or_super_admin_ui():
+    """
+    Organization management UI (orgs, employees, initiate calls, system health).
+    Allowed: org admin or super admin. Bootstrap: zero orgs -> open access.
+    Employees are redirected to the employee login/portal.
+    """
+    if Organization.query.count() == 0:
+        return None
+    if not current_user.is_authenticated:
+        return redirect(url_for('auth.login_org', next=request.url))
+    role = getattr(current_user, 'role', None)
+    if role in ('org', 'super'):
+        return None
+    if role == 'employee':
+        return redirect(url_for('auth.login_employee', next=request.url))
+    return redirect(url_for('auth.login_org', next=request.url))
+
+
+def _sidebar_nav_html(active_path, role, bootstrap):
+    """Left nav for admin shell: routes and insight portals based on role."""
+
+    def item(href, icon, label):
+        is_home = href == '/' and active_path == '/'
+        active = (
+            ' class="active"'
+            if (active_path == href or is_home)
+            else ''
+        )
+        return (
+            f'<li><a href="{href}"{active}><span>{icon}</span> {label}</a></li>'
+        )
+
+    lines = [
+        item('/', '🏢', 'Organizations'),
+        item('/employees', '👥', 'Add Employee'),
+        item('/view-employees', '📞', 'Initiate calls'),
+        item('/dashboard', '⚕️', 'System Health'),
+    ]
+    if bootstrap:
+        lines.append(item('/auth/login/org', '🔐', 'Org insights login'))
+        lines.append(item('/auth/login/employee', '👤', 'Employee insights login'))
+        lines.append(item('/auth/login/super', '🛡️', 'Super admin login'))
+    else:
+        lines.append(item('/portal/org', '📊', 'Organization insights'))
+        if role == 'super':
+            lines.append(item('/portal/super', '🛡️', 'Super admin insights'))
+        lines.append('<li><a href="/auth/logout"><span>🚪</span> Log out</a></li>')
+    return '<ul class="sidebar-nav">\n' + '\n'.join(lines) + '\n</ul>'
+
+
+def _top_bar_html(role, bootstrap):
+    """Fixed top strip: sign-in CTAs when bootstrapping; role + logout when admin."""
+    base = (
+        '<header role="banner" style="position:fixed;top:0;left:0;right:0;z-index:10003;'
+        'height:48px;background:#0f172a;display:flex;align-items:center;padding:0 16px;gap:12px;'
+        'font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2);">'
+    )
+    if bootstrap:
+        return (
+            base
+            + '<span style="color:#f8fafc;font-weight:700;margin-right:auto;font-size:14px;">MHM · Sign in</span>'
+            + '<a href="/auth/login/org" style="background:#2563eb;color:#fff;text-decoration:none;padding:9px 14px;border-radius:8px;font-weight:600;font-size:13px;">Organization login</a>'
+            + '<a href="/auth/login/employee" style="background:#fff;color:#1e40af;text-decoration:none;padding:9px 14px;border-radius:8px;font-weight:600;font-size:13px;">Employee login</a>'
+            + '<a href="/auth/login/super" style="background:#334155;color:#f8fafc;text-decoration:none;padding:9px 14px;border-radius:8px;font-weight:600;font-size:13px;">Super admin</a>'
+            + '</header>'
+        )
+    who = 'Organization admin' if role == 'org' else 'Super admin'
+    return (
+        base
+        + f'<span style="color:#f8fafc;font-weight:700;margin-right:auto;font-size:14px;">MHM · {who}</span>'
+        + '<a href="/auth/logout" style="background:#fff;color:#1e40af;text-decoration:none;padding:9px 14px;border-radius:8px;font-weight:600;font-size:13px;">Log out</a>'
+        + '</header>'
+    )
+
+
+def _inject_admin_shell(page_html, active_path):
+    """Inject dynamic top bar + sidebar; hide promo banner when signed-in admin."""
+    role = getattr(current_user, 'role', None) if current_user.is_authenticated else None
+    bootstrap = Organization.query.count() == 0
+    html = page_html.replace('<!--MHM_ADMIN_TOP_BAR-->', _top_bar_html(role, bootstrap))
+    html = html.replace('<!--MHM_ADMIN_SIDE_NAV-->', _sidebar_nav_html(active_path, role, bootstrap))
+    if role in ('org', 'super') and not bootstrap:
+        html = html.replace('</head>', '<style>.login-banner{display:none!important}</style></head>', 1)
+    return html
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -294,6 +381,51 @@ HTML_TEMPLATE = """
             color: var(--gray);
             margin-top: 6px;
         }
+        .login-banner {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(15,23,42,.06);
+        }
+        .login-banner-lead {
+            font-weight: 600;
+            color: var(--dark);
+            flex-basis: 100%;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+        .login-banner-btn {
+            display: inline-block;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: 0.15s;
+            border: 2px solid transparent;
+        }
+        .login-banner-btn-primary {
+            background: var(--primary);
+            color: white !important;
+        }
+        .login-banner-btn-outline {
+            background: white;
+            color: var(--primary) !important;
+            border-color: var(--primary);
+        }
+        .login-banner-note {
+            flex-basis: 100%;
+            font-size: 0.82rem;
+            color: var(--gray);
+            margin: 6px 0 0 0;
+            line-height: 1.45;
+        }
         @media (max-width: 768px) {
             .form-section {
                 grid-template-columns: 1fr;
@@ -327,23 +459,29 @@ HTML_TEMPLATE = """
         });
     </script>
 </head>
-<body>
+<body class="has-top-strip">
+<style>
+body.has-top-strip .sidebar { top: 48px !important; height: calc(100vh - 48px) !important; }
+body.has-top-strip .main-content { padding-top: 48px !important; }
+</style>
+    <!--MHM_ADMIN_TOP_BAR-->
     <!-- Sidebar Navigation -->
     <aside class="sidebar">
         <div class="sidebar-brand">
             <h2>🏥 MHM</h2>
             <p>Mental Health</p>
         </div>
-        <ul class="sidebar-nav">
-            <li><a href="/"><span>🏢</span> Organizations</a></li>
-            <li><a href="/employees"><span>👥</span> Add Employee</a></li>
-            <li><a href="/view-employees"><span>📋</span> View Employees</a></li>
-            <li><a href="/dashboard"><span>⚕️</span> System Health</a></li>
-        </ul>
+        <!--MHM_ADMIN_SIDE_NAV-->
     </aside>
 
     <!-- Main Content -->
     <div class="main-content">
+        <div class="login-banner" role="navigation" aria-label="Sign in">
+            <span class="login-banner-lead">Already registered? Sign in to wellbeing insights</span>
+            <a href="/auth/login/org" class="login-banner-btn login-banner-btn-primary">Organization login</a>
+            <a href="/auth/login/employee" class="login-banner-btn login-banner-btn-outline">Employee login</a>
+            <p class="login-banner-note">Insights dashboards: /portal/org and /portal/employee · Admin tools below require org login when organizations exist.</p>
+        </div>
         <div class="container">
         <div class="header">
             <h1>System Health</h1>
@@ -352,7 +490,7 @@ HTML_TEMPLATE = """
 
         <div class="status-box">
             <h3>✅ System Status: ONLINE</h3>
-            <p>Port: 8080 | Mode: Production</p>
+            <p>API ready · Configure SECRET_KEY and WEBHOOK_SECRET for production</p>
         </div>
 
         <div class="stats-grid">
@@ -676,6 +814,51 @@ ORG_PAGE = """
             border-color: rgba(239, 68, 68, 0.3);
             display: block;
         }
+        .login-banner {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(15,23,42,.06);
+        }
+        .login-banner-lead {
+            font-weight: 600;
+            color: var(--dark);
+            flex-basis: 100%;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+        .login-banner-btn {
+            display: inline-block;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: 0.15s;
+            border: 2px solid transparent;
+        }
+        .login-banner-btn-primary {
+            background: var(--primary);
+            color: white !important;
+        }
+        .login-banner-btn-outline {
+            background: white;
+            color: var(--primary) !important;
+            border-color: var(--primary);
+        }
+        .login-banner-note {
+            flex-basis: 100%;
+            font-size: 0.82rem;
+            color: var(--gray);
+            margin: 6px 0 0 0;
+            line-height: 1.45;
+        }
         @media (max-width: 768px) {
             .sidebar {
                 width: 250px;
@@ -693,20 +876,26 @@ ORG_PAGE = """
         }
     </style>
 </head>
-<body>
+<body class="has-top-strip">
+<style>
+body.has-top-strip .sidebar { top: 48px !important; height: calc(100vh - 48px) !important; }
+body.has-top-strip .main-content { padding-top: 48px !important; }
+</style>
+    <!--MHM_ADMIN_TOP_BAR-->
     <aside class="sidebar">
         <div class="sidebar-brand">
             <h2>MHM</h2>
             <p>Health Monitor</p>
         </div>
-        <ul class="sidebar-nav">
-            <li><a href="/" class="active"><span>🏢</span> Organizations</a></li>
-            <li><a href="/employees"><span>👥</span> Add Employee</a></li>
-            <li><a href="/view-employees"><span>📋</span> View Employees</a></li>
-            <li><a href="/dashboard"><span>⚕️</span> System Health</a></li>
-        </ul>
+        <!--MHM_ADMIN_SIDE_NAV-->
     </aside>
     <div class="main-content">
+        <div class="login-banner" role="navigation" aria-label="Sign in">
+            <span class="login-banner-lead">Already registered? Sign in to wellbeing insights</span>
+            <a href="/auth/login/org" class="login-banner-btn login-banner-btn-primary">Organization login</a>
+            <a href="/auth/login/employee" class="login-banner-btn login-banner-btn-outline">Employee login</a>
+            <p class="login-banner-note">Charts and trends: sign in above. First-time setup? Create your organization below (only when no org exists yet).</p>
+        </div>
         <div class="container">
             <div class="card">
                 <div class="header">
@@ -737,6 +926,10 @@ ORG_PAGE = """
                         <label for="orgIndustry">Industry *</label>
                         <input type="text" id="orgIndustry" required placeholder="e.g., Technology">
                     </div>
+                    <div class="form-group">
+                        <label for="orgAdminPw">Admin password (for organization insights login)</label>
+                        <input type="password" id="orgAdminPw" autocomplete="new-password" placeholder="Choose a secure password">
+                    </div>
                     <button type="submit">Create Organization</button>
                 </form>
             </div>
@@ -766,15 +959,19 @@ ORG_PAGE = """
             const phone = document.getElementById('orgPhone').value;
             const address = document.getElementById('orgAddress').value;
             const industry = document.getElementById('orgIndustry').value;
+            const admin_password = document.getElementById('orgAdminPw').value;
 
             const msgEl = document.getElementById('orgMessage');
             msgEl.textContent = 'Creating...';
             msgEl.className = 'message';
 
+            const body = {name, email, phone, address, industry};
+            if (admin_password) body.admin_password = admin_password;
+
             fetch('/api/organizations', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({name, email, phone, address, industry})
+                body: JSON.stringify(body)
             })
             .then(r => r.json())
             .then(data => {
@@ -806,7 +1003,7 @@ VIEW_EMPLOYEES_PAGE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>View Employees - Mental Health Monitoring</title>
+    <title>Initiate calls — Mental Health Monitoring</title>
     <style>
         * {
             margin: 0;
@@ -1049,6 +1246,51 @@ VIEW_EMPLOYEES_PAGE = """
             opacity: 0.6;
             cursor: not-allowed;
         }
+        .login-banner {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(15,23,42,.06);
+        }
+        .login-banner-lead {
+            font-weight: 600;
+            color: var(--dark);
+            flex-basis: 100%;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+        .login-banner-btn {
+            display: inline-block;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: 0.15s;
+            border: 2px solid transparent;
+        }
+        .login-banner-btn-primary {
+            background: var(--primary);
+            color: white !important;
+        }
+        .login-banner-btn-outline {
+            background: white;
+            color: var(--primary) !important;
+            border-color: var(--primary);
+        }
+        .login-banner-note {
+            flex-basis: 100%;
+            font-size: 0.82rem;
+            color: var(--gray);
+            margin: 6px 0 0 0;
+            line-height: 1.45;
+        }
         @media (max-width: 768px) {
             .sidebar {
                 width: 250px;
@@ -1063,23 +1305,29 @@ VIEW_EMPLOYEES_PAGE = """
         }
     </style>
 </head>
-<body>
+<body class="has-top-strip">
+<style>
+body.has-top-strip .sidebar { top: 48px !important; height: calc(100vh - 48px) !important; }
+body.has-top-strip .main-content { padding-top: 48px !important; }
+</style>
+    <!--MHM_ADMIN_TOP_BAR-->
     <aside class="sidebar">
         <div class="sidebar-brand">
             <h2>MHM</h2>
             <p>Health Monitor</p>
         </div>
-        <ul class="sidebar-nav">
-            <li><a href="/"><span>🏢</span> Organizations</a></li>
-            <li><a href="/employees"><span>👥</span> Add Employee</a></li>
-            <li><a href="/view-employees" class="active"><span>📋</span> View Employees</a></li>
-            <li><a href="/dashboard"><span>⚕️</span> System Health</a></li>
-        </ul>
+        <!--MHM_ADMIN_SIDE_NAV-->
     </aside>
     <div class="main-content">
+        <div class="login-banner" role="navigation" aria-label="Sign in">
+            <span class="login-banner-lead">Already registered? Sign in to wellbeing insights</span>
+            <a href="/auth/login/org" class="login-banner-btn login-banner-btn-primary">Organization login</a>
+            <a href="/auth/login/employee" class="login-banner-btn login-banner-btn-outline">Employee login</a>
+            <p class="login-banner-note">Insights dashboards open after login at /portal/org or /portal/employee.</p>
+        </div>
         <div class="page-header">
-            <h1>View Employees</h1>
-            <p>Select an organization to view its employees</p>
+            <h1>Initiate calls</h1>
+            <p>Select an organization, then start outbound wellbeing calls for employees</p>
         </div>
 
         <div class="selector-card">
@@ -1133,14 +1381,14 @@ VIEW_EMPLOYEES_PAGE = """
                 .catch(e => console.error('Error loading organizations:', e));
         }
 
-        function initiateCall(phoneNumber) {
+        function initiateCall(ev, phoneNumber, employeeId) {
             if (!phoneNumber) {
                 alert('Phone number not available for this employee');
                 return;
             }
 
             // Show loading state
-            const button = event.target;
+            const button = ev.currentTarget;
             const originalText = button.innerHTML;
             button.disabled = true;
             button.innerHTML = '⏳ Initiating...';
@@ -1148,7 +1396,8 @@ VIEW_EMPLOYEES_PAGE = """
             // Make API call to webhook
             const webhookUrl = 'https://sanjaysiva1997.app.n8n.cloud/webhook/14fea4b0-c69b-4e2a-aa29-3dcb4f2fd6af';
             const payload = {
-                'Phone Number': phoneNumber
+                'Phone Number': phoneNumber,
+                employee_id: employeeId
             };
 
             fetch(webhookUrl, {
@@ -1223,7 +1472,7 @@ VIEW_EMPLOYEES_PAGE = """
                                             </div>
                                         </div>
                                         <div class="action-buttons">
-                                            <button class="call-button" onclick="initiateCall('${emp.phone}')">☎️ Initiate Call</button>
+                                            <button type="button" class="call-button" onclick="initiateCall(event, ${JSON.stringify(emp.phone)}, ${emp.id})">☎️ Initiate Call</button>
                                         </div>
                                     </div>
                                 `).join('');
@@ -1433,6 +1682,51 @@ EMP_PAGE = """
             border-color: rgba(239, 68, 68, 0.3);
             display: block;
         }
+        .login-banner {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(15,23,42,.06);
+        }
+        .login-banner-lead {
+            font-weight: 600;
+            color: var(--dark);
+            flex-basis: 100%;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+        .login-banner-btn {
+            display: inline-block;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: 0.15s;
+            border: 2px solid transparent;
+        }
+        .login-banner-btn-primary {
+            background: var(--primary);
+            color: white !important;
+        }
+        .login-banner-btn-outline {
+            background: white;
+            color: var(--primary) !important;
+            border-color: var(--primary);
+        }
+        .login-banner-note {
+            flex-basis: 100%;
+            font-size: 0.82rem;
+            color: var(--gray);
+            margin: 6px 0 0 0;
+            line-height: 1.45;
+        }
         .form-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -1465,20 +1759,26 @@ EMP_PAGE = """
         }
     </style>
 </head>
-<body>
+<body class="has-top-strip">
+<style>
+body.has-top-strip .sidebar { top: 48px !important; height: calc(100vh - 48px) !important; }
+body.has-top-strip .main-content { padding-top: 48px !important; }
+</style>
+    <!--MHM_ADMIN_TOP_BAR-->
     <aside class="sidebar">
         <div class="sidebar-brand">
             <h2>MHM</h2>
             <p>Health Monitor</p>
         </div>
-        <ul class="sidebar-nav">
-            <li><a href="/"><span>🏢</span> Organizations</a></li>
-            <li><a href="/employees" class="active"><span>👥</span> Add Employee</a></li>
-            <li><a href="/view-employees"><span>📋</span> View Employees</a></li>
-            <li><a href="/dashboard"><span>⚕️</span> System Health</a></li>
-        </ul>
+        <!--MHM_ADMIN_SIDE_NAV-->
     </aside>
     <div class="main-content">
+        <div class="login-banner" role="navigation" aria-label="Sign in">
+            <span class="login-banner-lead">Already registered? Sign in to wellbeing insights</span>
+            <a href="/auth/login/org" class="login-banner-btn login-banner-btn-primary">Organization login</a>
+            <a href="/auth/login/employee" class="login-banner-btn login-banner-btn-outline">Employee login</a>
+            <p class="login-banner-note">Insights dashboards open after login at /portal/org or /portal/employee.</p>
+        </div>
         <div class="page-container">
             <div class="page-header">
                 <h1>Add Employee</h1>
@@ -1524,6 +1824,10 @@ EMP_PAGE = """
                             <label for="empDesg">Designation</label>
                             <input type="text" id="empDesg" placeholder="e.g., Senior Developer">
                         </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="empPortalPw">Portal password (for employee insights login)</label>
+                        <input type="password" id="empPortalPw" autocomplete="new-password" placeholder="Employee login password">
                     </div>
                     <button type="submit">Add Employee</button>
                 </form>
@@ -1578,15 +1882,13 @@ EMP_PAGE = """
             const empId = document.getElementById('empId').value;
             const dept = document.getElementById('empDept').value;
             const desg = document.getElementById('empDesg').value;
+            const portal_password = document.getElementById('empPortalPw').value;
 
             const msgEl = document.getElementById('empMessage');
             msgEl.textContent = 'Adding...';
             msgEl.className = 'message';
 
-            fetch('/api/employees', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
+            const empPayload = {
                     organization_id: parseInt(orgId),
                     first_name: firstName,
                     last_name: lastName,
@@ -1595,7 +1897,13 @@ EMP_PAGE = """
                     employee_id: empId,
                     department: dept,
                     designation: desg
-                })
+            };
+            if (portal_password) empPayload.portal_password = portal_password;
+
+            fetch('/api/employees', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(empPayload)
             })
             .then(r => r.json())
             .then(data => {
@@ -1624,20 +1932,32 @@ EMP_PAGE = """
 @web_routes.route('/', methods=['GET'])
 def create_org():
     """Render organization creation page"""
-    return Response(ORG_PAGE, mimetype='text/html')
+    denied = _require_org_or_super_admin_ui()
+    if denied:
+        return denied
+    return Response(_inject_admin_shell(ORG_PAGE, '/'), mimetype='text/html')
 
 @web_routes.route('/employees', methods=['GET'])
 def add_emp():
     """Render employee addition page"""
-    return Response(EMP_PAGE, mimetype='text/html')
+    denied = _require_org_or_super_admin_ui()
+    if denied:
+        return denied
+    return Response(_inject_admin_shell(EMP_PAGE, '/employees'), mimetype='text/html')
 
 @web_routes.route('/view-employees', methods=['GET'])
 def view_emps():
     """Render view employees by organization page"""
-    return Response(VIEW_EMPLOYEES_PAGE, mimetype='text/html')
+    denied = _require_org_or_super_admin_ui()
+    if denied:
+        return denied
+    return Response(_inject_admin_shell(VIEW_EMPLOYEES_PAGE, '/view-employees'), mimetype='text/html')
 
 @web_routes.route('/dashboard', methods=['GET'])
 def dashboard():
     """Render dashboard overview page"""
-    return Response(HTML_TEMPLATE, mimetype='text/html')
+    denied = _require_org_or_super_admin_ui()
+    if denied:
+        return denied
+    return Response(_inject_admin_shell(HTML_TEMPLATE, '/dashboard'), mimetype='text/html')
 

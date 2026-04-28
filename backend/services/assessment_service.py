@@ -1,6 +1,13 @@
 from backend.models.assessment import Assessment
 from backend.models.employee import Employee
 from backend.database.db import db
+from backend.services.sentiment_service import (
+    analyze_text,
+    build_summary_and_recommendations,
+    compound_to_wellbeing_score,
+    score_to_status,
+)
+
 
 class AssessmentService:
     
@@ -31,7 +38,49 @@ class AssessmentService:
         
         db.session.commit()
         return assessment
-    
+
+    @staticmethod
+    def create_assessment_from_transcript(
+        employee_id,
+        transcript,
+        call_duration_seconds=None,
+        call_notes=None,
+    ):
+        """Analyze transcript sentiment and persist an assessment tied to the voice call."""
+        employee = Employee.query.get(employee_id)
+        if not employee:
+            raise ValueError(f'Employee with ID {employee_id} not found')
+
+        sent = analyze_text(transcript)
+        score = compound_to_wellbeing_score(sent['compound'])
+        status = score_to_status(score)
+        summary, recommendations = build_summary_and_recommendations(
+            sent['label'], sent['compound'], score
+        )
+
+        assessment = Assessment(
+            employee_id=employee_id,
+            score=score,
+            status=status,
+            summary=summary,
+            recommendations=recommendations,
+            call_status='completed',
+            call_notes=call_notes,
+            call_duration=call_duration_seconds,
+            transcript=transcript,
+            sentiment_compound=sent['compound'],
+            sentiment_pos=sent['pos'],
+            sentiment_neg=sent['neg'],
+            sentiment_neu=sent['neu'],
+            sentiment_label=sent['label'],
+        )
+        db.session.add(assessment)
+        employee.last_assessment_date = assessment.assessment_date
+        employee.assessment_score = score
+        employee.status = 'completed'
+        db.session.commit()
+        return assessment
+
     @staticmethod
     def get_assessment(assessment_id):
         """Get assessment by ID"""

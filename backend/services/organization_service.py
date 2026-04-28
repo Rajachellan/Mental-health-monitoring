@@ -1,3 +1,5 @@
+from werkzeug.security import generate_password_hash
+
 from backend.models.organization import Organization
 from backend.models.employee import Employee
 from backend.database.db import db
@@ -5,7 +7,7 @@ from backend.database.db import db
 class OrganizationService:
     
     @staticmethod
-    def create_organization(name, email, phone=None, address=None, industry=None):
+    def create_organization(name, email, phone=None, address=None, industry=None, admin_password=None):
         """Create a new organization"""
         # Check if organization already exists
         existing = Organization.query.filter_by(name=name).first()
@@ -21,7 +23,10 @@ class OrganizationService:
             email=email,
             phone=phone,
             address=address,
-            industry=industry
+            industry=industry,
+            password_hash=generate_password_hash(admin_password)
+            if admin_password
+            else None,
         )
         db.session.add(org)
         db.session.commit()

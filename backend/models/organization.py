@@ -11,6 +11,7 @@ class Organization(db.Model):
     address = db.Column(db.Text, nullable=True)
     industry = db.Column(db.String(100), nullable=True)
     total_employees = db.Column(db.Integer, default=0)
+    password_hash = db.Column(db.String(256), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

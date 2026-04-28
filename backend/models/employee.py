@@ -19,6 +19,7 @@ class Employee(db.Model):
     last_assessment_date = db.Column(db.DateTime, nullable=True)
     assessment_score = db.Column(db.Float, nullable=True)  # 0-100 score
     assessment_status_details = db.Column(db.Text, nullable=True)  # Additional details from assessment
+    password_hash = db.Column(db.String(256), nullable=True)
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

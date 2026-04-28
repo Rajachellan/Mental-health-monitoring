@@ -19,7 +19,8 @@ def create_organization():
             email=data['email'],
             phone=data.get('phone'),
             address=data.get('address'),
-            industry=data.get('industry')
+            industry=data.get('industry'),
+            admin_password=data.get('admin_password'),
         )
         
         return jsonify({

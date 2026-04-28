@@ -18,6 +18,12 @@ class Assessment(db.Model):
     call_duration = db.Column(db.Integer, nullable=True)  # in seconds
     call_status = db.Column(db.String(50), nullable=False, default='pending')  # pending, in_progress, completed, failed
     call_notes = db.Column(db.Text, nullable=True)
+    transcript = db.Column(db.Text, nullable=True)
+    sentiment_compound = db.Column(db.Float, nullable=True)
+    sentiment_pos = db.Column(db.Float, nullable=True)
+    sentiment_neg = db.Column(db.Float, nullable=True)
+    sentiment_neu = db.Column(db.Float, nullable=True)
+    sentiment_label = db.Column(db.String(32), nullable=True)
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -36,5 +42,11 @@ class Assessment(db.Model):
             'call_duration': self.call_duration,
             'call_status': self.call_status,
             'call_notes': self.call_notes,
+            'transcript': self.transcript,
+            'sentiment_compound': self.sentiment_compound,
+            'sentiment_pos': self.sentiment_pos,
+            'sentiment_neg': self.sentiment_neg,
+            'sentiment_neu': self.sentiment_neu,
+            'sentiment_label': self.sentiment_label,
             'created_at': self.created_at.isoformat()
         }
