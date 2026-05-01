@@ -39,7 +39,7 @@ pipeline {
                     docker run -d \
                         --name ${CONTAINER_NAME} \
                         -p ${PORT}:9002 \
-                        --env-file $FLASK_ENV_FILE \
+                        --env-file "$FLASK_ENV_FILE" \
                         --restart unless-stopped \
                         ${IMAGE_NAME}
                     '''
