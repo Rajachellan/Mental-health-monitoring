@@ -30,14 +30,20 @@ pipeline {
 
         stage('Deploy (Port 9002)') {
             steps {
-                sh '''
-                docker rm -f ${CONTAINER_NAME} || true
-                docker run -d \
-                    --name ${CONTAINER_NAME} \
-                    -p ${PORT}:9002 \
-                    --restart unless-stopped \
-                    ${IMAGE_NAME}
-                '''
+                // Load the .env file securely from Jenkins credentials
+                withCredentials([
+                    file(credentialsId: 'mental-health-env-file', variable: 'FLASK_ENV_FILE')
+                ]) {
+                    sh '''
+                    docker rm -f ${CONTAINER_NAME} || true
+                    docker run -d \
+                        --name ${CONTAINER_NAME} \
+                        -p ${PORT}:9002 \
+                        --env-file $FLASK_ENV_FILE \
+                        --restart unless-stopped \
+                        ${IMAGE_NAME}
+                    '''
+                }
             }
         }
     }
