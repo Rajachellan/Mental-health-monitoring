@@ -34,7 +34,7 @@ pipeline {
                 docker rm -f ${CONTAINER_NAME} || true
                 docker run -d \
                     --name ${CONTAINER_NAME} \
-                    -p ${PORT}:5000 \
+                    -p ${PORT}:9002 \
                     --restart unless-stopped \
                     ${IMAGE_NAME}
                 '''
