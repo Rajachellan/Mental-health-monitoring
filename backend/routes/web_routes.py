@@ -1357,10 +1357,25 @@ body.has-top-strip .main-content { padding-top: 48px !important; }
             });
         }
 
+        function escapeAttr(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/'/g, '&#39;');
+        }
+
         // Load organizations on page load
         window.addEventListener('load', () => {
             setActiveNav('/view-employees');
             loadOrganizations();
+            document.getElementById('employeesContainer').addEventListener('click', function (e) {
+                const btn = e.target.closest('.call-button');
+                if (!btn || !this.contains(btn)) return;
+                const phone = btn.getAttribute('data-phone');
+                const employeeId = parseInt(btn.getAttribute('data-employee-id'), 10);
+                initiateCall(e, phone, employeeId);
+            });
         });
 
         function loadOrganizations() {
@@ -1382,13 +1397,15 @@ body.has-top-strip .main-content { padding-top: 48px !important; }
         }
 
         function initiateCall(ev, phoneNumber, employeeId) {
+            const button = ev.target.closest('.call-button');
+            if (!button) return;
+
             if (!phoneNumber) {
                 alert('Phone number not available for this employee');
                 return;
             }
 
             // Show loading state
-            const button = ev.currentTarget;
             const originalText = button.innerHTML;
             button.disabled = true;
             button.innerHTML = '⏳ Initiating...';
@@ -1472,7 +1489,7 @@ body.has-top-strip .main-content { padding-top: 48px !important; }
                                             </div>
                                         </div>
                                         <div class="action-buttons">
-                                            <button type="button" class="call-button" onclick="initiateCall(event, ${JSON.stringify(emp.phone)}, ${emp.id})">☎️ Initiate Call</button>
+                                            <button type="button" class="call-button" data-phone="${escapeAttr(emp.phone)}" data-employee-id="${escapeAttr(emp.id)}">☎️ Initiate Call</button>
                                         </div>
                                     </div>
                                 `).join('');
